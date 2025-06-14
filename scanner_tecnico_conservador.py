@@ -5,7 +5,7 @@ import time
 def get_usdt_symbols():
     url = "https://api.binance.com/api/v3/exchangeInfo"
     data = requests.get(url, timeout=10).json()
-    symbols = [s['symbol'] for s in data['symbols'] if 'USDT' in s['symbol'] and s['quoteAsset'] == 'USDT' and s['status'] == 'TRADING']
+    symbols = [s['symbol'] for s in data['symbols'] if 'USDT' in s.get('symbol', '') and s.get('quoteAsset') == 'USDT' and s.get('status') == 'TRADING']
     return symbols
 
 def get_klines(symbol, interval, limit=100):
@@ -36,48 +36,56 @@ def calcular_macd(df):
     signal_line = macd_line.ewm(span=9, adjust=False).mean()
     return macd_line, signal_line
 
+def analisar_par_individual(symbol="BTCUSDT", intervalo="1d"):
+    try:
+        df = get_klines(symbol, interval=intervalo)
+        rsi = calcular_rsi(df)
+        ema20 = calcular_ema(df, 20)
+        ema50 = calcular_ema(df, 50)
+        macd_line, signal_line = calcular_macd(df)
+
+        preco = df['close'].iloc[-1]
+        rsi_val = rsi.iloc[-1]
+        ema20_val = ema20.iloc[-1]
+        ema50_val = ema50.iloc[-1]
+        macd_cross = (macd_line.iloc[-2] < signal_line.iloc[-2]) and (macd_line.iloc[-1] > signal_line.iloc[-1])
+
+        confianca = 0
+        if rsi_val < 30:
+            confianca += 1
+        if preco > ema50_val:
+            confianca += 1
+        if preco > ema20_val * 1.01:
+            confianca += 1
+
+        tp = round(preco * 1.03, 4)
+        sl = round(preco * 0.97, 4)
+
+        return pd.DataFrame([{
+            'symbol': symbol,
+            'Preço': round(preco, 4),
+            'RSI': round(rsi_val, 2),
+            'EMA20': round(ema20_val, 2),
+            'EMA50': round(ema50_val, 2),
+            'MACD Cross': macd_cross,
+            'Confiança': f"{confianca}/3",
+            'Take Profit': tp,
+            'Stop Loss': sl,
+            'Timeframe': intervalo,
+            'Sinal': "🟢 Entrada conservadora" if confianca >= 2 else "⚪ Neutro"
+        }])
+    except Exception as e:
+        print(f"Erro ao analisar {symbol}: {e}")
+        return pd.DataFrame()
+
 def scanner_conservador(intervalo="1d"):
     resultados = []
     symbols = get_usdt_symbols()
     for symbol in symbols:
         try:
-            df = get_klines(symbol, interval=intervalo)
-            rsi = calcular_rsi(df)
-            ema20 = calcular_ema(df, 20)
-            ema50 = calcular_ema(df, 50)
-            macd_line, signal_line = calcular_macd(df)
-
-            preco = df['close'].iloc[-1]
-            rsi_val = rsi.iloc[-1]
-            ema20_val = ema20.iloc[-1]
-            ema50_val = ema50.iloc[-1]
-            macd_cross = (macd_line.iloc[-2] < signal_line.iloc[-2]) and (macd_line.iloc[-1] > signal_line.iloc[-1])
-
-            if rsi_val < 35 and ema20_val > ema50_val and preco > ema20_val and macd_cross:
-                confianca = 0
-                if rsi_val < 30:
-                    confianca += 1
-                if preco > ema50_val:
-                    confianca += 1
-                if preco > ema20_val * 1.01:
-                    confianca += 1
-
-                tp = round(preco * 1.03, 4)
-                sl = round(preco * 0.97, 4)
-
-                resultados.append({
-                    'symbol': symbol,
-                    'Preço': round(preco, 4),
-                    'RSI': round(rsi_val, 2),
-                    'EMA20': round(ema20_val, 2),
-                    'EMA50': round(ema50_val, 2),
-                    'MACD Cross': macd_cross,
-                    'Confiança': f"{confianca}/3",
-                    'Take Profit': tp,
-                    'Stop Loss': sl,
-                    'Timeframe': intervalo,
-                    'Sinal': "🟢 Entrada conservadora"
-                })
+            resultado = analisar_par_individual(symbol, intervalo)
+            if not resultado.empty and "Entrada conservadora" in resultado.iloc[0]['Sinal']:
+                resultados.append(resultado.iloc[0])
         except Exception as e:
             print(f"Erro em {symbol}: {e}")
         time.sleep(0.3)

@@ -4,9 +4,18 @@ import time
 
 def get_usdt_symbols():
     url = "https://api.binance.com/api/v3/exchangeInfo"
-    data = requests.get(url, timeout=10).json()
-    symbols = [s['symbol'] for s in data['symbols'] if 'USDT' in s['symbol'] and s['quoteAsset'] == 'USDT' and s['status'] == 'TRADING']
+    response = requests.get(url, timeout=10)
+    data = response.json()
+    if 'symbols' not in data:
+        print("Erro: 'symbols' não encontrado na resposta da API Binance")
+        return []
+    symbols = [
+        s['symbol'] for s in data['symbols']
+        if all(k in s for k in ['symbol', 'quoteAsset', 'status']) and
+        'USDT' in s['symbol'] and s['quoteAsset'] == 'USDT' and s['status'] == 'TRADING'
+    ]
     return symbols
+
 
 def get_klines(symbol, interval, limit=100):
     url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"

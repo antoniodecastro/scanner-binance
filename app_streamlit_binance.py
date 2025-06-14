@@ -1,23 +1,26 @@
 import streamlit as st
 import pandas as pd
+from scanner_tecnico_conservador import scanner_conservador
 from scanner_tecnico_binance import scanner_tecnico
 
-st.set_page_config(page_title="Scanner Técnico Binance", layout="centered")
-st.title("🔍 Scanner Técnico de Criptomoedas na Binance")
+st.set_page_config(page_title="Binance TA Scanner", layout="wide")
 
-password = st.text_input("🔐 Introduz a palavra-passe para aceder:", type="password")
-if password != "minhaSenha123":
-    st.warning("Acesso negado.")
-    st.stop()
+st.title("📈 Binance Technical Scanner")
 
-st.markdown("Este scanner identifica moedas com RSI < 30 e EMA20 acima da EMA50.")
+modo = st.selectbox("Escolhe o modo de análise:", ["Scanner Técnico Normal", "Scanner Conservador com Confiança"])
 
-if st.button("🔄 Executar Scanner Técnico"):
-    with st.spinner("A analisar moedas na Binance..."):
-        resultado = scanner_tecnico()
-        if not resultado.empty:
-            st.success(f"Foram encontradas {len(resultado)} moedas com as condições técnicas.")
-            st.dataframe(resultado)
-            st.download_button("📥 Download CSV", resultado.to_csv(index=False), "resultados.csv", "text/csv")
-        else:
-            st.warning("Nenhuma moeda cumpre as condições neste momento.")
+intervalo = st.selectbox("Escolhe o timeframe:", ["1h", "4h", "1d"])
+
+if st.button("🚀 Executar Scanner"):
+    if modo == "Scanner Técnico Normal":
+        resultado = scanner_tecnico(intervalo)
+    else:
+        resultado = scanner_conservador(intervalo)
+
+    if not resultado.empty:
+        st.success(f"{len(resultado)} oportunidades encontradas!")
+        st.dataframe(resultado, use_container_width=True)
+        csv = resultado.to_csv(index=False).encode('utf-8')
+        st.download_button("💾 Download CSV", csv, "resultado_scanner.csv", "text/csv")
+    else:
+        st.warning("Nenhuma moeda cumpre os critérios neste momento.")

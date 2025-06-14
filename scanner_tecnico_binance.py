@@ -2,28 +2,20 @@ import requests
 import pandas as pd
 import time
 
-BASE_URL = "https://api.binance.com"
-INTERVAL = "1h"
-LIMIT = 100
-
 def get_usdt_symbols():
-    url = f"{BASE_URL}/api/v3/exchangeInfo"
-    response = requests.get(url)
-    try:
-        data = response.json()
-        symbol_data = data.get('symbols', [])
-        symbols = [s['symbol'] for s in symbol_data if 'USDT' in s.get('symbol', '') and s.get('quoteAsset') == 'USDT' and s.get('status') == 'TRADING']
-        return symbols
-    except Exception as e:
-        print(f"Erro ao obter símbolos: {e}")
-        return []
+    url = "https://api.binance.com/api/v3/exchangeInfo"
+    data = requests.get(url, timeout=10).json()
+    symbols = [s['symbol'] for s in data['symbols'] if 'USDT' in s['symbol'] and s['quoteAsset'] == 'USDT' and s['status'] == 'TRADING']
+    return symbols
 
-def get_klines(symbol, interval=INTERVAL, limit=LIMIT):
-    url = f"{BASE_URL}/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
+def get_klines(symbol, interval, limit=100):
+    url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
     response = requests.get(url)
     data = response.json()
     df = pd.DataFrame(data, columns=["open_time", "open", "high", "low", "close", "volume", "close_time", "quote_asset_volume", "trades", "taker_base_volume", "taker_quote_volume", "ignore"])
     df['close'] = df['close'].astype(float)
+    df['high'] = df['high'].astype(float)
+    df['low'] = df['low'].astype(float)
     return df
 
 def calcular_rsi(df, period=14):
@@ -37,31 +29,42 @@ def calcular_rsi(df, period=14):
 def calcular_ema(df, period):
     return df['close'].ewm(span=period, adjust=False).mean()
 
-def scanner_tecnico():
+def calcular_macd(df):
+    ema12 = df['close'].ewm(span=12, adjust=False).mean()
+    ema26 = df['close'].ewm(span=26, adjust=False).mean()
+    macd_line = ema12 - ema26
+    signal_line = macd_line.ewm(span=9, adjust=False).mean()
+    return macd_line, signal_line
+
+def scanner_tecnico(intervalo="1d"):
     resultados = []
     symbols = get_usdt_symbols()
-    for symbol in symbols[:20]:
+    for symbol in symbols:
         try:
-            df = get_klines(symbol)
-            df['rsi'] = calcular_rsi(df)
-            df['ema20'] = calcular_ema(df, 20)
-            df['ema50'] = calcular_ema(df, 50)
+            df = get_klines(symbol, interval=intervalo)
+            rsi = calcular_rsi(df)
+            ema20 = calcular_ema(df, 20)
+            ema50 = calcular_ema(df, 50)
+            macd_line, signal_line = calcular_macd(df)
 
-            ultima_rsi = df['rsi'].iloc[-1]
-            ultima_ema20 = df['ema20'].iloc[-1]
-            ultima_ema50 = df['ema50'].iloc[-1]
             preco = df['close'].iloc[-1]
+            rsi_val = rsi.iloc[-1]
+            ema20_val = ema20.iloc[-1]
+            ema50_val = ema50.iloc[-1]
+            macd_cross = (macd_line.iloc[-2] < signal_line.iloc[-2]) and (macd_line.iloc[-1] > signal_line.iloc[-1])
 
-            if ultima_rsi < 30 and ultima_ema20 > ultima_ema50:
+            if rsi_val < 40 and ema20_val > ema50_val and preco > ema20_val and macd_cross:
                 resultados.append({
                     'symbol': symbol,
-                    'price': preco,
-                    'rsi': round(ultima_rsi, 2),
-                    'ema20': round(ultima_ema20, 2),
-                    'ema50': round(ultima_ema50, 2)
+                    'Preço': round(preco, 4),
+                    'RSI': round(rsi_val, 2),
+                    'EMA20': round(ema20_val, 2),
+                    'EMA50': round(ema50_val, 2),
+                    'MACD Cross': macd_cross,
+                    'Timeframe': intervalo,
+                    'Sinal': "✅ Entrada potencial"
                 })
         except Exception as e:
-            print(f"Erro ao processar {symbol}: {e}")
-        time.sleep(0.2)
-
+            print(f"Erro em {symbol}: {e}")
+        time.sleep(0.3)
     return pd.DataFrame(resultados)
